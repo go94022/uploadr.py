@@ -414,6 +414,8 @@ class Uploadr:
                         images.append( (os.path.normpath( dirpath + "/" + f ),fname) )
                 if(len(images)>0):
                     list_of_images.append((dirpath.rsplit('/',2)[-1],images))
+                if(args.norecursion):
+                    break
         return list_of_images
 
 
@@ -591,6 +593,8 @@ if __name__ == "__main__":
         help='Suppress all output except errors')
     parser.add_argument('-l','--log',action='store_true',
         help='Enable logging to text file')
+    parser.add_argument('-1','--norecursion',action='store_true',
+        help="Upload only files in current directory, don't go deeper")
     parser.add_argument('path',help="Path to the file")
     args = parser.parse_args()
 

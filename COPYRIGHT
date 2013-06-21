@@ -3,8 +3,10 @@ The original Uploadr.py is (c) Cameron Mallory, September 2005; license:
 
 Includes the xmltramp library, (c) Aaron Swartz, 2003; licensed under the GNU GPL 2.
 
-Further changes made to this program are (c) Martin Kleppmann, 2009; to preserve
-licence compatibility, these and all future contributions are licensed under the
+Further changes made to this program are (c) Martin Kleppmann, 2009; and 
+(c) Ankit Daftery, 2013
+
+To preserve licence compatibility, these and all future contributions are licensed under the
 GNU GPL 2.
 
 This program is free software; you can redistribute it and/or modify it under the
