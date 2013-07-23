@@ -595,8 +595,24 @@ if __name__ == "__main__":
         help='Enable logging to text file')
     parser.add_argument('-1','--norecursion',action='store_true',
         help="Upload only files in current directory, don't go deeper")
+    parser.add_argument('--public',action='store_true',
+        help="Make this batch of uploads visible to everyone")
+    parser.add_argument('--friend',action='store_true',
+        help="Make this batch of uploads visible to friends")
+    parser.add_argument('--family',action='store_true',
+        help="Make this batch of uploads visible to family")
     parser.add_argument('path',help="Path to the file")
     args = parser.parse_args()
+
+    if args.public:
+        FLICKR["is_public"] = "1"
+        FLICKR["is_family"] = "1"
+        FLICKR["is_friend"] = "1"
+    if args.friend:
+        FLICKR["is_friend"] = "1"
+    if args.family:
+        FLICKR["is_family"] = "1"
+
 
     flick = Uploadr()
 
