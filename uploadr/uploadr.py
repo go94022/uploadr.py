@@ -53,7 +53,7 @@ import xmltramp
 #
 # Location to scan for new images
 #
-IMAGE_DIR = "images/"
+IMAGE_DIR = "/Users/alist/Pictures/flickr"
 #
 #   Flickr settings
 #
@@ -87,7 +87,7 @@ class APIConstants:
     """ APIConstants class
     """
 
-    base = "http://flickr.com/services/"
+    base = "http://api.flickr.com/services/" #"http://flickr.com/services/"
     rest   = base + "rest/"
     auth   = base + "auth/"
     upload = base + "upload/"
