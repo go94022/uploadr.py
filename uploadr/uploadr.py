@@ -60,9 +60,9 @@ IMAGE_DIR = "/Users/alist/Pictures/flickr"
 FLICKR = {"title": "",
         "description": "",
         "tags": "auto-upload",
-        "is_public": "1",
+        "is_public": "0",
         "is_friend": "0",
-        "is_family": "0" }
+        "is_family": "1" }
 #
 #   How often to check for new images to upload (in seconds)
 #
