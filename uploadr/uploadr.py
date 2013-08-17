@@ -29,6 +29,8 @@
 
    You may use this code however you see fit in any form whatsoever.
 
+    August 2013, by alisanta
+    took code from Barry Dobyns (https://github.com/bdobyns/uploadr.py) to make more arguments available in command line
 
 """
 
@@ -44,6 +46,7 @@ import time
 import urllib2
 import webbrowser
 import xmltramp
+from optparse import OptionParser
 
 #
 ##
@@ -51,7 +54,7 @@ import xmltramp
 ##
 
 #
-# Location to scan for new images
+# Location to scan for new images, this can be override from parameter
 #
 IMAGE_DIR = "/Users/alist/Pictures/flickr"
 #
@@ -62,7 +65,7 @@ FLICKR = {"title": "",
         "tags": "auto-upload",
         "is_public": "0",
         "is_friend": "0",
-        "is_family": "1" }
+        "is_family": "0" }
 #
 #   How often to check for new images to upload (in seconds)
 #
@@ -311,7 +314,7 @@ class Uploadr:
         self.uploaded = shelve.open( HISTORY_FILE )
         for i, image in enumerate( newImages ):
             success = self.uploadImage( image )
-            if args.drip_feed and success and i != len( newImages )-1:
+            if options.drip_feed and success and i != len( newImages )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
                 time.sleep( DRIP_TIME )
         self.uploaded.close()
@@ -341,12 +344,12 @@ class Uploadr:
             print("Uploading " + image + "...")
             try:
                 photo = ('photo', image, open(image,'rb').read())
-                if args.title: # Replace
-                    FLICKR["title"] = args.title
-                if args.description: # Replace
-                    FLICKR["description"] = args.description
-                if args.tags: # Append
-                    FLICKR["tags"] += " " + args.tags + " "
+                #if args.title: # Replace
+                #    FLICKR["title"] = args.title
+                #if args.description: # Replace
+                #    FLICKR["description"] = args.description
+                #if args.tags: # Append
+                #    FLICKR["tags"] += " " + args.tags + " "
                 d = {
                     api.token       : str(self.token),
                     api.perms       : str(self.perms),
@@ -367,6 +370,26 @@ class Uploadr:
                     print("Success.")
                     self.logUpload( res.photoid, image )
                     success = True
+                    if len(FLICKR["lat"]) and len(FLICKR["lon"]):
+                        d = { 
+                            api.token : str(self.token),
+                            "method" : str("flickr.photos.geo.setLocation"),
+                            "photo_id" : str(res.photoid),
+                            'lat': str(FLICKR['lat']),
+                            'lon': str(FLICKR['lon'])
+                            }
+                        sig = self.signCall( d )
+                        d[ api.sig ] = sig
+                        d[ api.key ] = FLICKR[ api.key ]         
+                        url = self.build_request(api.rest, d, () )
+                        xml = urllib2.urlopen( url ).read()
+                        res = xmltramp.parse(xml)
+                        if ( self.isGood( res ) ):
+                            print "Patched Location", d['lat'], d['lon']
+                        else:
+                            print "FAILED Location", d['lat'], d['lon']
+                            self.reportError( res )
+
                 else :
                     print("Problem:")
                     self.reportError( res )
@@ -469,22 +492,59 @@ class Uploadr:
             time.sleep( SLEEP_TIME )
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Upload images to Flickr.')
-    parser.add_argument('-d', '--daemon', action='store_true',
-        help='Run forever as a daemon')
-    parser.add_argument('-i', '--title',       action='store',
-        help='Title for uploaded images')
-    parser.add_argument('-e', '--description', action='store',
-        help='Description for uploaded images')
-    parser.add_argument('-t', '--tags',        action='store',
-        help='Space-separated tags for uploaded images')
-    parser.add_argument('-r', '--drip-feed',   action='store_true',
-        help='Wait a bit between uploading individual images')
-    args = parser.parse_args()
+    #parser = argparse.ArgumentParser(description='Upload images to Flickr.')
+    #parser.add_argument('-d', '--daemon', action='store_true',
+    #    help='Run forever as a daemon')
+    #parser.add_argument('-i', '--title',       action='store',
+    #    help='Title for uploaded images')
+    #parser.add_argument('-e', '--description', action='store',
+    #    help='Description for uploaded images')
+    #parser.add_argument('-t', '--tags',        action='store',
+    #    help='Space-separated tags for uploaded images')
+    #parser.add_argument('-r', '--drip-feed',   action='store_true',
+    #    help='Wait a bit between uploading individual images')
+    #args = parser.parse_args()
+    usage= "usage: %prog [options] dir_to_upload"
+    version="%prog 0.1"
+    parser = OptionParser(usage=usage, version=version)
+    parser.add_option("-d", "--daemon", action="store_true",  dest="daemon", default=False, help="Run forever as a daemon")
+    parser.add_option("-e", "--desc",   action="store", dest="desc",   default="", help="Description of files to upload")
+    parser.add_option("-t", "--tags",   action="store", dest="tags",   default=sys.argv[0], help="Tags to flag uploaded photos with")
+    parser.add_option("-i", "--title",  action="store", dest="title",   default="",    help="Title to give uploaded photos")
+    parser.add_option("-p", "--public", action="store_const", const=1, dest="public", default=1,     help="Mark the upload public")
+    parser.add_option("-n", "--notpublic", action="store_const", const=0, dest="public", default=0,               help="Mark the upload hidden (not public)")
+    parser.add_option("-f", "--friend", action="store_const", const=1, dest="friends", default=0,    help="Mark the upload for friends only")
+    parser.add_option("-a", "--family", action="store_const", const=1, dest="family", default=0,     help="Mark the upload for Family only")
+    parser.add_option("-x", "--lon", action="store", dest="lat", default="", help="latitude geo-location")
+    parser.add_option("-y", "--lat", action="store", dest="lon", default="", help="longitude geo-location")
+    parser.add_option("-r", "--drip-feed", action='store_true', default="", help='Wait a bit between uploading individual images')
+    (options,args) = parser.parse_args()
+
+    if hasattr(options, 'title'):
+        FLICKR["title"] = options.title
+    if hasattr(options, "desc"):
+        FLICKR["desc"] = options.desc
+    if hasattr(options, 'tags'):
+        FLICKR["tags"] = options.tags
+    if hasattr(options, 'lat'):
+        FLICKR["lat"] = options.lat
+    if hasattr(options, 'lon'):
+        FLICKR["lon"] = options.lon
+    if hasattr(options, 'notpublic'):
+        FLICKR["is_public"] = options.public
+    if hasattr(options, 'friend'):
+        FLICKR["is_friend"] = options.friends    
+    if hasattr(options, 'family'):
+        FLICKR["is_family"] = options.family
 
     flick = Uploadr()
 
-    if args.daemon:
+    if len(args):
+        IMAGE_DIR = args[0];
+
+    print "Reading images from "+IMAGE_DIR   
+    if ( options.daemon == True ) :
         flick.run()
     else:
         flick.upload()
+    
