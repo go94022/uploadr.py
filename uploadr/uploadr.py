@@ -31,7 +31,7 @@
 
     August 2013, by alisanta
     took code from Barry Dobyns (https://github.com/bdobyns/uploadr.py) to make more arguments available in command line
-
+    add argument to allow upload of resized images 
 """
 
 import argparse
@@ -47,6 +47,9 @@ import urllib2
 import webbrowser
 import xmltramp
 from optparse import OptionParser
+import Image
+import tempfile
+
 
 #
 ##
@@ -343,7 +346,16 @@ class Uploadr:
         if ( not self.uploaded.has_key( image ) ):
             print("Uploading " + image + "...")
             try:
-                photo = ('photo', image, open(image,'rb').read())
+                if hasattr(options, 'image_pixel_size'):
+                    resized_image = self.resize_image(image)
+
+                if resized_image=="":
+                    photo = ('photo', image, open(image,'rb').read())
+                else:
+                    photo = ('photo', image, open(resized_image,'rb').read())
+                    
+                
+                
                 #if args.title: # Replace
                 #    FLICKR["title"] = args.title
                 #if args.description: # Replace
@@ -393,9 +405,55 @@ class Uploadr:
                 else :
                     print("Problem:")
                     self.reportError( res )
+
+                # remove temp resized image
+                if resized_image!="":
+                    self.kill_resize_image(resized_image)
+
             except:
                 print(str(sys.exc_info()))
         return success
+
+    def resize_image ( self, image):
+        """ resizeimage accoding to specified size in arguments
+            return empty if resize is cancelled
+        """
+        img = Image.open(image)
+        cancel=0
+        if img.size[0]>img.size[1]:
+            if float(img.size[0])<=float(options.image_pixel_size):
+                cancel=1
+            else:
+                ratio=float(img.size[0])/float(img.size[1])
+                vsize=int(float(options.image_pixel_size))
+                hsize=int(float(options.image_pixel_size)/float(ratio))
+        else:
+            if float(img.size[1])<=float(options.image_pixel_size):
+                cancel=1
+            else:
+                ratio=float(img.size[1])/float(img.size[0])
+                hsize=int(float(options.image_pixel_size))
+                vsize=int(float(options.image_pixel_size)/float(ratio))
+        
+        if cancel==0:
+            img2 = img.resize((vsize,hsize), Image.ANTIALIAS)
+            resized = os.path.normpath(  tempfile.gettempdir() +"/tmpres"+(os.path.split(image))[1] ) 
+            #print "Resized image path "+resized
+            img2.save(resized)
+        else:
+            resized=""
+        return resized
+
+    def kill_resize_image(self, resized_image):
+        """ remove temporary resized image after upload
+        """
+        if (os.path.exists(resized_image)):
+            try:
+                os.remove(resized_image)
+            except:
+                print("Error removing temp "+resized_image)
+
+
 
     def logUpload( self, photoID, imageName ):
         """ logUpload
@@ -505,11 +563,11 @@ if __name__ == "__main__":
     #    help='Wait a bit between uploading individual images')
     #args = parser.parse_args()
     usage= "usage: %prog [options] dir_to_upload"
-    version="%prog 0.1"
+    version="%prog 0.2"
     parser = OptionParser(usage=usage, version=version)
     parser.add_option("-d", "--daemon", action="store_true",  dest="daemon", default=False, help="Run forever as a daemon")
     parser.add_option("-e", "--desc",   action="store", dest="desc",   default="", help="Description of files to upload")
-    parser.add_option("-t", "--tags",   action="store", dest="tags",   default=sys.argv[0], help="Tags to flag uploaded photos with")
+    parser.add_option("-t", "--tags",   action="store", dest="tags",   default="", help="Tags to flag uploaded photos with")
     parser.add_option("-i", "--title",  action="store", dest="title",   default="",    help="Title to give uploaded photos")
     parser.add_option("-p", "--public", action="store_const", const=1, dest="public", default=1,     help="Mark the upload public")
     parser.add_option("-n", "--notpublic", action="store_const", const=0, dest="public", default=0,               help="Mark the upload hidden (not public)")
@@ -518,6 +576,7 @@ if __name__ == "__main__":
     parser.add_option("-x", "--lon", action="store", dest="lat", default="", help="latitude geo-location")
     parser.add_option("-y", "--lat", action="store", dest="lon", default="", help="longitude geo-location")
     parser.add_option("-r", "--drip-feed", action='store_true', default="", help='Wait a bit between uploading individual images')
+    parser.add_option("-s", "--size", action="store", type="string", dest="image_pixel_size", help="Uploaded image pixel size (800,1280,1600,2048)")
     (options,args) = parser.parse_args()
 
     if hasattr(options, 'title'):
@@ -536,6 +595,8 @@ if __name__ == "__main__":
         FLICKR["is_friend"] = options.friends    
     if hasattr(options, 'family'):
         FLICKR["is_family"] = options.family
+
+
 
     flick = Uploadr()
 
