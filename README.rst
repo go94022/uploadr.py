@@ -20,6 +20,12 @@ lines to your ``$HOME/.bash_profile``::
     export FLICKR_UPLOADR_PY_API_KEY=0123456789abcdef0123456789abcdef
     export FLICKR_UPLOADR_PY_SECRET=0123456789abcdef
 
+Additional Requirement
+----------------------
+this fork requires you to have Python Image Library (PIL) installed in your Python environment
+refer to http://www.pythonware.com/products/pil for installation
+
+tested on Python 2.7, this module is still functioning properly
 
 License
 -------
