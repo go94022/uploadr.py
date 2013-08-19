@@ -22,7 +22,7 @@ lines to your ``$HOME/.bash_profile``::
 
 Additional Requirement
 ----------------------
-this fork requires you to have Python Image Library (PIL) installed in your Python environment
+this fork implements image resize feature before uploading to Flickr. This requires you to have Python Image Library (PIL) installed in your Python environment
 refer to http://www.pythonware.com/products/pil for installation
 
 tested on Python 2.7, this module is still functioning properly
