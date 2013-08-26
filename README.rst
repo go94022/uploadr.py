@@ -1,7 +1,7 @@
-Uploadr.py
-==========
+Flickr-Uploader.py
+==================
 
-Uploadr.py is a simple Python script for uploading your photos to Flickr. Unlike
+Flickr-Uploader is a simple Python script for uploading your photos to Flickr. Unlike
 many GUI applications out there, it lends itself to automation; and because it's
 free and open source, you can just change it if you don't like it.
 
@@ -29,8 +29,21 @@ tested on Python 2.7, this module is still functioning properly
 
 Also included is pexif module from (https://github.com/bennoleslie/pexif) to copy important EXIF information (Model, Maker, GPS data) to resized image.
 
+Usage
+-----
+if you have setup default image directory to upload, then just issue command
+``python uploadr.py ``
+
+for more help on additional parameters
+``python uploadr.py --help``
+
+
+To upload specific directory and do resizing to 1280 pixel wide:
+``python uploadr.py -p 1280 "/Users/name/pictures/2013/bikes" ``
+
+
 License
 -------
 
-Uploadr.py consists of code by Cameron Mallory, Martin Kleppmann, Aaron Swartz and
+Uploadr.py consists of code by Cameron Mallory, Martin Kleppmann, Aaron Swartz, Alisanta Tjia and
 others. See ``COPYRIGHT`` for details.
