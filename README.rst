@@ -27,6 +27,8 @@ refer to http://www.pythonware.com/products/pil for installation
 
 tested on Python 2.7, this module is still functioning properly
 
+Also included is pexif module from (https://github.com/bennoleslie/pexif) to copy important EXIF information (Model, Maker, GPS data) to resized image.
+
 License
 -------
 

@@ -29,9 +29,12 @@
 
    You may use this code however you see fit in any form whatsoever.
 
-    August 2013, by alisanta
+   *** August 2013, by alisanta
     took code from Barry Dobyns (https://github.com/bdobyns/uploadr.py) to make more arguments available in command line
     add argument to allow upload of resized images 
+
+    include a repo from Ben Leslei (https://github.com/bennoleslie/pexif) to copy EXIF information to resized image
+   *** 
 """
 
 import argparse
@@ -49,6 +52,7 @@ import xmltramp
 from optparse import OptionParser
 import Image
 import tempfile
+from pexif import pexif
 
 
 #
@@ -81,7 +85,8 @@ DRIP_TIME = 1 * 60
 #
 #   File we keep the history of uploaded images in.
 #
-HISTORY_FILE = os.path.join(IMAGE_DIR, "uploadr.history")
+#HISTORY_FILE = os.path.join(IMAGE_DIR, "uploadr.history")
+HISTORY_FILE = os.path.join(os.path.expanduser("~"), ".uploadr.history")
 
 ##
 ##  You shouldn't need to modify anything below here
@@ -119,7 +124,8 @@ class Uploadr:
 
     token = None
     perms = ""
-    TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
+    #TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
+    TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".flickrToken")
 
     def __init__( self ):
         """ Constructor
@@ -315,8 +321,19 @@ class Uploadr:
         if ( not self.checkToken() ):
             self.authenticate()
         self.uploaded = shelve.open( HISTORY_FILE )
+        setId=""
         for i, image in enumerate( newImages ):
-            success = self.uploadImage( image )
+            id = self.uploadImage( image )
+
+            # add photo to set
+            
+            if (options.sets!=""):
+                if setId=="": 
+                    setId = options.sets
+                if not(self.addPhotoToSet( setId, id )):
+                    setId = self.createSet( id )
+                    self.addPhotoToSet( setId, id )
+
             if options.drip_feed and success and i != len( newImages )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
                 time.sleep( DRIP_TIME )
@@ -381,7 +398,7 @@ class Uploadr:
                 if ( self.isGood( res ) ):
                     print("Success.")
                     self.logUpload( res.photoid, image )
-                    success = True
+                    success = res.photoid
                     if len(FLICKR["lat"]) and len(FLICKR["lon"]):
                         d = { 
                             api.token : str(self.token),
@@ -402,6 +419,7 @@ class Uploadr:
                             print "FAILED Location", d['lat'], d['lon']
                             self.reportError( res )
 
+
                 else :
                     print("Problem:")
                     self.reportError( res )
@@ -412,7 +430,56 @@ class Uploadr:
 
             except:
                 print(str(sys.exc_info()))
-        return success
+        return success #photoid if successful
+
+    def createSet( self, photoid ):
+            print "Creating set ", SET_TITLE , "...",
+            d = { 
+                api.method : "flickr.photosets.create",
+                api.token   : str(self.token),
+                "title"      : str( SET_TITLE ),
+                "primary_photo_id" : str(photoid)
+            }
+            sig = self.signCall( d )
+            d[ api.sig ] = sig
+            d[ api.key ] = FLICKR[ api.key ]        
+            url = self.urlGen( api.rest, d, sig )
+            try:
+                res = self.getResponse( url )
+                if ( self.isGood( res ) ):
+                    print "successful."
+                    return res.photoset("id")
+                else :
+                    self.reportError( res )
+            except:
+                print str( sys.exc_info() )
+
+    def addPhotoToSet( self, setid, photoid ):
+        # from https://github.com/stinju/uploadr.py/
+        
+        d = { 
+            api.method : "flickr.photosets.addPhoto",
+            api.token   : str(self.token),
+            "photoset_id"      : str(setid),
+            "photo_id" : str(photoid)
+        }
+        sig = self.signCall( d )
+        d[ api.sig ] = sig
+        d[ api.key ] = FLICKR[ api.key ]        
+        url = self.urlGen( api.rest, d, sig )
+        try:
+            res = self.getResponse( url )
+
+            
+            if ( self.isGood( res ) ):
+                print "successful add to set."
+            elif str(res.err('code'))=="1":
+                return False # error 1: Photoset not found
+            else :
+                self.reportError( res )
+        except:
+            print str( sys.exc_info() )
+        return True
 
     def resize_image ( self, image):
         """ resizeimage accoding to specified size in arguments
@@ -438,11 +505,49 @@ class Uploadr:
         if cancel==0:
             img2 = img.resize((vsize,hsize), Image.ANTIALIAS)
             resized = os.path.normpath(  tempfile.gettempdir() +"/tmpres"+(os.path.split(image))[1] ) 
-            #print "Resized image path "+resized
-            img2.save(resized)
+            img2.save(resized, quality=95)
+            
+            # now copy EXIF information
+            self.copy_exif(image, resized)
+
         else:
             resized=""
         return resized
+
+    def copy_exif (self, sourcefile, targetfile):
+        """ copy important EXIF to resized file. 
+            Refer to pexif code for acceptable tags.
+            For my own purpose, I just need some tags copied: Camera, Model, Original Date, and GPS if available
+        """
+        a=["Make", "Model", "Software","DateTime", "FileModifyDate", "Orientation"]
+        b=["DateTimeOriginal"]
+        img = pexif.JpegFile.fromFile(sourcefile)
+        p=img.exif.primary
+        q=p.ExtendedEXIF
+        img_dst = pexif.JpegFile.fromFile(targetfile)
+        primary_dst = img_dst.exif.primary
+
+        # copy primary tags
+        for x in a:
+            if hasattr(p, x):
+                primary_dst[x]=p[x]
+        
+        # extended EXIF tags
+        for x in b:
+            if hasattr(q, x):
+                primary_dst.ExtendedEXIF[x] = q[x]
+        
+        # GPS Info
+        try:
+            gps_loc = img.get_geo()
+            img_dst.set_geo(gps_loc[0], gps_loc[1])
+        except img.NoSection:
+            pass
+        try:
+            img_dst.writeFile(targetfile)
+        except:
+            print ("Unable to write file "+targetfile)
+        
 
     def kill_resize_image(self, resized_image):
         """ remove temporary resized image after upload
@@ -569,14 +674,17 @@ if __name__ == "__main__":
     parser.add_option("-e", "--desc",   action="store", dest="desc",   default="", help="Description of files to upload")
     parser.add_option("-t", "--tags",   action="store", dest="tags",   default="", help="Tags to flag uploaded photos with")
     parser.add_option("-i", "--title",  action="store", dest="title",   default="",    help="Title to give uploaded photos")
-    parser.add_option("-p", "--public", action="store_const", const=1, dest="public", default=1,     help="Mark the upload public")
+    parser.add_option("-u", "--public", action="store_const", const=1, dest="public", default=1,     help="Mark the upload public")
     parser.add_option("-n", "--notpublic", action="store_const", const=0, dest="public", default=0,               help="Mark the upload hidden (not public)")
     parser.add_option("-f", "--friend", action="store_const", const=1, dest="friends", default=0,    help="Mark the upload for friends only")
     parser.add_option("-a", "--family", action="store_const", const=1, dest="family", default=0,     help="Mark the upload for Family only")
     parser.add_option("-x", "--lon", action="store", dest="lat", default="", help="latitude geo-location")
     parser.add_option("-y", "--lat", action="store", dest="lon", default="", help="longitude geo-location")
     parser.add_option("-r", "--drip-feed", action='store_true', default="", help='Wait a bit between uploading individual images')
-    parser.add_option("-s", "--size", action="store", type="string", dest="image_pixel_size", help="Uploaded image pixel size (800,1280,1600,2048)")
+    parser.add_option("-p", "--pixel", action="store", type="string", dest="image_pixel_size", help="Uploaded image pixel size (800,1280,1600,2048)")
+    parser.add_option("-s", "--sets", action="store", type="string", dest="sets", default="", help="Add photo to specified set title")
+    parser.add_option("-o", "--setdirname", action='store_true', default="", help='Use directory name as Set name')
+
     (options,args) = parser.parse_args()
 
     if hasattr(options, 'title'):
@@ -594,14 +702,20 @@ if __name__ == "__main__":
     if hasattr(options, 'friend'):
         FLICKR["is_friend"] = options.friends    
     if hasattr(options, 'family'):
+        print (options.family)
         FLICKR["is_family"] = options.family
-
+    if hasattr(options, 'sets'):
+        if options.sets!="":
+            SET_TITLE = options.sets
+       
 
 
     flick = Uploadr()
 
     if len(args):
         IMAGE_DIR = args[0];
+
+
 
     print "Reading images from "+IMAGE_DIR   
     if ( options.daemon == True ) :
