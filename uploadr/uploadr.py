@@ -59,7 +59,7 @@ import ConfigParser
 #
 #
 #
-UPLOADR_DIR = "/Users/gaurav/Pictures/Ladakh/"
+UPLOADR_DIR = "/media/C/Ankit/Projects/Python-Projects/Phototime/uploadr/uploadr/"
 #
 #   Flickr settings
 #
