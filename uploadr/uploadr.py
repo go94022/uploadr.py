@@ -44,6 +44,7 @@ import time
 import urllib2
 import webbrowser
 import xmltramp
+import ConfigParser
 
 #
 ##
@@ -58,7 +59,7 @@ import xmltramp
 #
 #
 #
-UPLOADR_DIR = "/media/C/Ankit/Projects/Python-Projects/Phototime/uploadr/uploadr/"
+UPLOADR_DIR = "/Users/gaurav/Pictures/Ladakh/"
 #
 #   Flickr settings
 #
@@ -90,8 +91,10 @@ LOG_FILE = os.path.join(UPLOADR_DIR, "uploaded.log")
 ##
 ##  You shouldn't need to modify anything below here
 ##
-FLICKR["api_key"] = os.environ['FLICKR_UPLOADR_PY_API_KEY']
-FLICKR["secret"] = os.environ['FLICKR_UPLOADR_PY_SECRET']
+config = ConfigParser.RawConfigParser()
+config.read('settings.cfg')
+FLICKR["api_key"] = config.get('flickr', 'api_key')
+FLICKR["secret"] = config.get('flickr', 'secret')
 
 class APIConstants:
     """ APIConstants class
