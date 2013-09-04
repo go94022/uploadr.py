@@ -47,6 +47,7 @@ import string
 import sys
 import time
 import urllib2
+import urllib
 import webbrowser
 import xmltramp
 from optparse import OptionParser
@@ -153,7 +154,7 @@ class Uploadr:
         """
         foo = base + "?"
         for d in data:
-            foo += d + "=" + data[d] + "&"
+            foo += d + "=" + urllib.quote_plus( data[d] ) + "&"
         return foo + api.key + "=" + FLICKR[ api.key ] + "&" + api.sig + "=" + sig
 
 
@@ -316,23 +317,24 @@ class Uploadr:
     def upload( self ):
         """ upload
         """
-
+        
         newImages = self.grabNewImages()
         if ( not self.checkToken() ):
             self.authenticate()
         self.uploaded = shelve.open( HISTORY_FILE )
+
         setId=""
         for i, image in enumerate( newImages ):
-            id = self.uploadImage( image )
+            picid = self.uploadImage( image )
 
             # add photo to set
             
             if (options.sets!=""):
                 if setId=="": 
-                    setId = options.sets
-                if not(self.addPhotoToSet( setId, id )):
-                    setId = self.createSet( id )
-                    self.addPhotoToSet( setId, id )
+                    setId = self.createSet( picid )
+                else:
+                    self.addPhotoToSet( setId, picid )
+                
 
             if options.drip_feed and success and i != len( newImages )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
@@ -349,7 +351,7 @@ class Uploadr:
             (dirpath, dirnames, filenames) = data
             for f in filenames :
                 ext = f.lower().split(".")[-1]
-                if ( ext == "jpg" or ext == "gif" or ext == "png" ):
+                if (( ext == "jpg" or ext == "gif" or ext == "png" ) and (dirpath.find("/.")==-1)):
                     images.append( os.path.normpath( dirpath + "/" + f ) )
         images.sort()
         return images
@@ -361,7 +363,7 @@ class Uploadr:
 
         success = False
         if ( not self.uploaded.has_key( image ) ):
-            print("Uploading " + image + "...")
+            sys.stdout.write("Uploading " + image + "... ")
             try:
                 if hasattr(options, 'image_pixel_size'):
                     resized_image = self.resize_image(image)
@@ -433,11 +435,12 @@ class Uploadr:
         return success #photoid if successful
 
     def createSet( self, photoid ):
-            print "Creating set ", SET_TITLE , "...",
+            sys.stdout.write( "Creating set "+ SET_TITLE + "... using photoid "+ str(photoid))
             d = { 
                 api.method : "flickr.photosets.create",
                 api.token   : str(self.token),
-                "title"      : str( SET_TITLE ),
+                api.perms : "write",
+                "title"      : SET_TITLE,
                 "primary_photo_id" : str(photoid)
             }
             sig = self.signCall( d )
@@ -446,6 +449,7 @@ class Uploadr:
             url = self.urlGen( api.rest, d, sig )
             try:
                 res = self.getResponse( url )
+                
                 if ( self.isGood( res ) ):
                     print "successful."
                     return res.photoset("id")
@@ -472,13 +476,16 @@ class Uploadr:
 
             
             if ( self.isGood( res ) ):
-                print "successful add to set."
+                #print "successful add to set."
+                pass
             elif str(res.err('code'))=="1":
                 return False # error 1: Photoset not found
             else :
                 self.reportError( res )
+                return False
         except:
             print str( sys.exc_info() )
+            return False
         return True
 
     def resize_image ( self, image):
@@ -526,7 +533,7 @@ class Uploadr:
         q=p.ExtendedEXIF
         img_dst = pexif.JpegFile.fromFile(targetfile)
         primary_dst = img_dst.exif.primary
-
+        
         # copy primary tags
         for x in a:
             if hasattr(p, x):
@@ -542,6 +549,8 @@ class Uploadr:
             gps_loc = img.get_geo()
             img_dst.set_geo(gps_loc[0], gps_loc[1])
         except img.NoSection:
+            pass
+        except:
             pass
         try:
             img_dst.writeFile(targetfile)
@@ -682,8 +691,8 @@ if __name__ == "__main__":
     parser.add_option("-y", "--lat", action="store", dest="lon", default="", help="longitude geo-location")
     parser.add_option("-r", "--drip-feed", action='store_true', default="", help='Wait a bit between uploading individual images')
     parser.add_option("-p", "--pixel", action="store", type="string", dest="image_pixel_size", help="Uploaded image pixel size (800,1280,1600,2048)")
-    parser.add_option("-s", "--sets", action="store", type="string", dest="sets", default="", help="Add photo to specified set title")
-    parser.add_option("-o", "--setdirname", action='store_true', default="", help='Use directory name as Set name')
+    parser.add_option("-s", "--sets", action="store", type="string", dest="sets", default="", help="Create set and ddd photo to specified set title")
+    #parser.add_option("-o", "--setdirname", action='store_true', default="", help='Use directory name as Set name')
 
     (options,args) = parser.parse_args()
 
