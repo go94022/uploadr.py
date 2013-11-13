@@ -317,24 +317,35 @@ class Uploadr:
     def upload( self ):
         """ upload
         """
+
+        if options.listset:
+            self.listPhotoset()
+            return
+
         
         newImages = self.grabNewImages()
         if ( not self.checkToken() ):
             self.authenticate()
         self.uploaded = shelve.open( HISTORY_FILE )
 
-        setId=""
+        setId = self.findPhotoset(options.sets)
         for i, image in enumerate( newImages ):
             picid = self.uploadImage( image )
 
             # add photo to set
-            
+            """
             if (options.sets!=""):
                 if setId=="": 
                     setId = self.createSet( picid )
                 else:
                     self.addPhotoToSet( setId, picid )
-                
+            """
+            if (options.sets!=""):
+                if (setId==""):
+                    # set not found, create new set
+                    self.addPhotoToSet( setId, picid )
+                self.addPhotoToSet( setId, picid )    
+
 
             if options.drip_feed and success and i != len( newImages )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
@@ -457,6 +468,62 @@ class Uploadr:
                     self.reportError( res )
             except:
                 print str( sys.exc_info() )
+
+    def findPhotoset ( self, setname):
+        """ retrieve all photosets from flickr, and find setID 
+        """
+        d = { 
+            api.method : "flickr.photosets.getList",
+            api.token   : str(self.token)
+        }
+        sig = self.signCall( d )
+        d[ api.sig ] = sig
+        d[ api.key ] = FLICKR[ api.key ]        
+        url = self.urlGen( api.rest, d, sig )
+        result = ""
+        try:
+            res = self.getResponse( url )
+            allsets=[]
+            for the_set in res[0]:
+                dic=(str(the_set('id')), str(the_set.title), str(the_set('date_create')))
+                allsets.append(dic)
+
+            for x in allsets:
+                if (x[1]==setname):
+                    result = x[0]
+
+        except:
+            print str( sys.exc_info() )
+
+        return result
+
+    def listPhotoset ( self):
+        """ retrieve all photosets from flickr, print as output
+        """
+        d = { 
+            api.method : "flickr.photosets.getList",
+            api.token   : str(self.token)
+        }
+        sig = self.signCall( d )
+        d[ api.sig ] = sig
+        d[ api.key ] = FLICKR[ api.key ]        
+        url = self.urlGen( api.rest, d, sig )
+        
+        try:
+            res = self.getResponse( url )
+            allsets=[]
+            for the_set in res[0]:
+                dic=( str(the_set.title),str(the_set('id')), str(the_set('date_create')))
+                allsets.append(dic)
+                
+            a = sorted(allsets, key=lambda a_entry: a_entry[0]) 
+            for x in a:
+                print (x[0] +" - "+ x[1])
+
+        except:
+            print str( sys.exc_info() )
+
+       
 
     def addPhotoToSet( self, setid, photoid ):
         # from https://github.com/stinju/uploadr.py/
@@ -692,6 +759,8 @@ if __name__ == "__main__":
     parser.add_option("-r", "--drip-feed", action='store_true', default="", help='Wait a bit between uploading individual images')
     parser.add_option("-p", "--pixel", action="store", type="string", dest="image_pixel_size", help="Uploaded image pixel size (800,1280,1600,2048)")
     parser.add_option("-s", "--sets", action="store", type="string", dest="sets", default="", help="Create set and ddd photo to specified set title")
+    parser.add_option("-l", "--listset", action="store_true", default="", help="Print List of Photoset, ** No Upload process **")
+    
     #parser.add_option("-o", "--setdirname", action='store_true', default="", help='Use directory name as Set name')
 
     (options,args) = parser.parse_args()
@@ -726,7 +795,7 @@ if __name__ == "__main__":
 
 
 
-    print "Reading images from "+IMAGE_DIR   
+    print "Image folder set to "+IMAGE_DIR   
     if ( options.daemon == True ) :
         flick.run()
     else:
