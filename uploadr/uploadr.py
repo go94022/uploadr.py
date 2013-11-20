@@ -54,6 +54,8 @@ from optparse import OptionParser
 import Image
 import tempfile
 from pexif import pexif
+import timeit  # want to calculate resize processing time
+
 
 
 #
@@ -333,19 +335,19 @@ class Uploadr:
             picid = self.uploadImage( image )
 
             # add photo to set
-            """
+            
             if (options.sets!=""):
                 if setId=="": 
                     setId = self.createSet( picid )
                 else:
                     self.addPhotoToSet( setId, picid )
-            """
-            if (options.sets!=""):
-                if (setId==""):
-                    # set not found, create new set
-                    self.addPhotoToSet( setId, picid )
-                self.addPhotoToSet( setId, picid )    
-
+            #
+            #if (options.sets!=""):
+            #    if (setId==""):
+            #        # set not found, create new set
+            #        self.addPhotoToSet( setId, picid )
+            #    self.addPhotoToSet( setId, picid )    
+            #"""
 
             if options.drip_feed and success and i != len( newImages )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
@@ -559,6 +561,7 @@ class Uploadr:
         """ resizeimage accoding to specified size in arguments
             return empty if resize is cancelled
         """
+        tic = timeit.default_timer()
         img = Image.open(image)
         cancel=0
         if img.size[0]>img.size[1]:
@@ -586,6 +589,8 @@ class Uploadr:
 
         else:
             resized=""
+        toc = timeit.default_timer()
+        print ("resize time %s " % (toc-tic))
         return resized
 
     def copy_exif (self, sourcefile, targetfile):
