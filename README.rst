@@ -17,16 +17,12 @@ To use this application, you need to obtain your own Flickr API key and secret
 key. You can apply for keys `on the Flickr website
 <http://www.flickr.com/services/api/keys/apply/>`_.
 
-When you have got those keys, you need to set environment variables so that they
-can be used by this application. For example, if you use Bash, add the following
-lines to your ``$HOME/.bash_profile``::
-
-    export FLICKR_UPLOADR_PY_API_KEY=0123456789abcdef0123456789abcdef
-    export FLICKR_UPLOADR_PY_SECRET=0123456789abcdef
+Keys and other settings go in a settings.yml file--rename settings.yml.default
+and modify as needed.
 
 
 License
 -------
 
-Uploadr.py consists of code by Cameron Mallory, Martin Kleppmann, Aaron Swartz and
-others. See ``COPYRIGHT`` for details.
+Uploadr.py consists of code by Cameron Mallory, Martin Kleppmann, Aaron Swartz, 
+Andy Hebrank and others. See ``COPYRIGHT`` for details.
