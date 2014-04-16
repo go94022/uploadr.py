@@ -45,13 +45,14 @@ import urllib2
 import webbrowser
 import xmltramp
 import hashlib
+import logging
 
 # location of script
-script_dir = os.path.dirname(os.path.realpath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 # read settings yaml
 import yaml
-with open(os.path.join(script_dir, "settings.yml")) as f:
+with open(os.path.join(SCRIPT_DIR, "settings.yml")) as f:
     settings = yaml.safe_load(f)
 IMAGE_DIR = settings["image_dir"]
 FLICKR = settings["flickr"]
@@ -90,6 +91,7 @@ class Uploadr:
     """
 
     token = None
+    logger = None
     perms = ""
     TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
 
@@ -98,6 +100,14 @@ class Uploadr:
         """
         self.token = self.getCachedToken()
 
+        # set up logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+        handler = logging.FileHandler(os.path.join(SCRIPT_DIR, 'uploadr.log'))
+        handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
 
     def signCall( self, data):
@@ -127,7 +137,7 @@ class Uploadr:
         """ Authenticate user so we can upload images
         """
 
-        print("Getting new token")
+        self.logger.info("Getting new token")
         self.getFrob()
         self.getAuthKey()
         self.getToken()
@@ -159,7 +169,7 @@ class Uploadr:
             else:
                 self.reportError( response )
         except:
-            print("Error getting frob:" + str( sys.exc_info() ))
+            self.logger.error("Error getting frob:" + str( sys.exc_info() ))
 
     def getAuthKey( self ):
         """
@@ -219,7 +229,7 @@ class Uploadr:
             else :
                 self.reportError( res )
         except:
-            print(str(sys.exc_info()))
+            self.logger.error(str(sys.exc_info()))
 
     def getCachedToken( self ):
         """
@@ -239,7 +249,7 @@ class Uploadr:
         try:
             open( self.TOKEN_FILE , "w").write( str(self.token) )
         except:
-            print("Issue writing token to local cache ", str(sys.exc_info()))
+            self.logger.error("Issue writing token to local cache ", str(sys.exc_info()))
 
     def checkToken( self ):
         """
@@ -275,7 +285,7 @@ class Uploadr:
                 else :
                     self.reportError( res )
             except:
-                print(str(sys.exc_info()))
+                self.logger.error(str(sys.exc_info()))
             return False
 
 
@@ -292,7 +302,7 @@ class Uploadr:
             if success and args.delete:
                 self.removeImage( image )
             if args.drip_feed and success and i != len( newImages )-1:
-                print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
+                self.logger.info("Waiting " + str(DRIP_TIME) + " seconds before next upload")
                 time.sleep( DRIP_TIME )
         self.uploaded.close()
 
@@ -318,9 +328,9 @@ class Uploadr:
 
         success = False
         if ( self.uploaded.has_key( self.hashImage(image) ) ):
-            print "Already uploaded " + image
+            self.logger.info("Already uploaded " + image)
         else:
-            print("Uploading " + image + "...")
+            self.logger.info("Uploading " + image + "...")
             try:
                 photo = ('photo', image, open(image,'rb').read())
                 if args.title: # Replace
@@ -346,12 +356,12 @@ class Uploadr:
                 xml = urllib2.urlopen( url ).read()
                 res = xmltramp.parse(xml)
                 if ( self.isGood( res ) ):
-                    print("Success.")
+                    self.logger.info("Success.")
                     # log the upload by flick id and hash of the file
                     self.logUpload( res.photoid, self.hashImage(image) )
                     success = True
                 else :
-                    print("Problem:")
+                    self.logger.warning("Problem:")
                     self.reportError( res )
             except:
                 print(str(sys.exc_info()))
@@ -452,9 +462,9 @@ class Uploadr:
         """
 
         try:
-            print("Error: " + str( res.err('code') + " " + res.err('msg') ))
+            self.logger.error("Error: " + str( res.err('code') + " " + res.err('msg') ))
         except:
-            print("Error: " + str( res ))
+            self.logger.error("Error: " + str( res ))
 
     def getResponse( self, url ):
         """
