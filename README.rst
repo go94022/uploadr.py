@@ -5,6 +5,10 @@ Uploadr.py is a simple Python script for uploading your photos to Flickr. Unlike
 many GUI applications out there, it lends itself to automation; and because it's
 free and open source, you can just change it if you don't like it.
 
+Modified 4/2013 to make Win32 only (watch for filesystem changes in target folder)! 
+Now support local file deletion on successful upload, logging by file hash, some 
+other minor changes.
+
 
 Authentication
 --------------

@@ -1,0 +1,15 @@
+image_dir: C:\Users\username\images
+
+# flickr defaults
+flickr:
+  title: ""
+  description: ""
+  tags: auto-upload
+  is_public: 0
+  is_friend: 0
+  is_family: 1
+  api_key: YOUR API KEY
+  api_secret: YOUR API SECRET
+
+# only to limit upload bandwidth
+drip_time: 60

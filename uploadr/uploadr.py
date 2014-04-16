@@ -44,56 +44,34 @@ import time
 import urllib2
 import webbrowser
 import xmltramp
+import hashlib
 
-#
-##
-##  Items you will want to change
-##
+# location of script
+script_dir = os.path.dirname(os.path.realpath(__file__))
 
-#
-# Location to scan for new images
-#
-IMAGE_DIR = "images/"
-#
-#   Flickr settings
-#
-FLICKR = {"title": "",
-        "description": "",
-        "tags": "auto-upload",
-        "is_public": "1",
-        "is_friend": "0",
-        "is_family": "0" }
-#
-#   How often to check for new images to upload (in seconds)
-#
-SLEEP_TIME = 1 * 60
-#
-#   Only with --drip-feed option:
-#     How often to wait between uploading individual images (in seconds)
-#
-DRIP_TIME = 1 * 60
-#
+# read settings yaml
+import yaml
+with open(os.path.join(script_dir, "settings.yml")) as f:
+    settings = yaml.safe_load(f)
+IMAGE_DIR = settings["image_dir"]
+FLICKR = settings["flickr"]
+DRIP_TIME = settings["drip_time"]
+
 #   File we keep the history of uploaded images in.
 #
 HISTORY_FILE = os.path.join(IMAGE_DIR, "uploadr.history")
-
-##
-##  You shouldn't need to modify anything below here
-##
-FLICKR["api_key"] = os.environ['FLICKR_UPLOADR_PY_API_KEY']
-FLICKR["secret"] = os.environ['FLICKR_UPLOADR_PY_SECRET']
 
 class APIConstants:
     """ APIConstants class
     """
 
-    base = "http://flickr.com/services/"
+    base = "https://flickr.com/services/"
     rest   = base + "rest/"
     auth   = base + "auth/"
     upload = base + "upload/"
 
     token = "auth_token"
-    secret = "secret"
+    secret = "api_secret"
     key = "api_key"
     sig = "api_sig"
     frob = "frob"
@@ -311,6 +289,8 @@ class Uploadr:
         self.uploaded = shelve.open( HISTORY_FILE )
         for i, image in enumerate( newImages ):
             success = self.uploadImage( image )
+            if success and args.delete:
+                self.removeImage( image )
             if args.drip_feed and success and i != len( newImages )-1:
                 print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
                 time.sleep( DRIP_TIME )
@@ -337,7 +317,9 @@ class Uploadr:
         """
 
         success = False
-        if ( not self.uploaded.has_key( image ) ):
+        if ( self.uploaded.has_key( self.hashImage(image) ) ):
+            print "Already uploaded " + image
+        else:
             print("Uploading " + image + "...")
             try:
                 photo = ('photo', image, open(image,'rb').read())
@@ -365,7 +347,8 @@ class Uploadr:
                 res = xmltramp.parse(xml)
                 if ( self.isGood( res ) ):
                     print("Success.")
-                    self.logUpload( res.photoid, image )
+                    # log the upload by flick id and hash of the file
+                    self.logUpload( res.photoid, self.hashImage(image) )
                     success = True
                 else :
                     print("Problem:")
@@ -374,14 +357,37 @@ class Uploadr:
                 print(str(sys.exc_info()))
         return success
 
-    def logUpload( self, photoID, imageName ):
-        """ logUpload
+    def removeImage( self, image ):
+        """ delete a local image (presumably on successful upload)
+        """
+        if os.path.isfile(image):
+            print ("Deleting local copy of " + image)
+            return os.remove(image)
+        return False
+
+    def hashImage ( self, image ):
+        """ given a filename, hash the file contents
+        """
+        # from http://www.pythoncentral.io/hashing-files-with-python/
+        BLOCKSIZE = 65536
+        hasher = hashlib.md5()
+        with open( image, 'rb' ) as fin:
+            buf = fin.read(BLOCKSIZE)
+            while len(buf) > 0:
+                hasher.update(buf)
+                buf = fin.read(BLOCKSIZE)
+        return(hasher.hexdigest())
+
+
+    def logUpload( self, photoID, fileHash ):
+        """ log the upload
         """
 
         photoID = str( photoID )
-        imageName = str( imageName )
-        self.uploaded[ imageName ] = photoID
-        self.uploaded[ photoID ] = imageName
+        fileHash = str( fileHash )
+
+        self.uploaded[ fileHash ] = photoID
+        self.uploaded[ photoID ] =  fileHash
 
     def build_request(self, theurl, fields, files, txheaders=None):
         """
@@ -463,10 +469,37 @@ class Uploadr:
         """ run
         """
 
-        while ( True ):
-            self.upload()
-            print("Last check: " + str( time.asctime(time.localtime())))
-            time.sleep( SLEEP_TIME )
+        # from http://timgolden.me.uk/python/win32_how_do_i/watch_directory_for_changes.html
+        import win32file
+        import win32con
+        import win32event
+        #
+        # FindFirstChangeNotification sets up a handle for watching
+        #  file changes. The first parameter is the path to be
+        #  watched; the second is a boolean indicating whether the
+        #  directories underneath the one specified are to be watched;
+        #  the third is a list of flags as to what kind of changes to
+        #  watch for. We're just looking at file additions / deletions.
+        #
+        change_handle = win32file.FindFirstChangeNotification (
+            IMAGE_DIR,
+            0,
+            win32con.FILE_NOTIFY_CHANGE_FILE_NAME
+            )
+
+        try:
+            while ( True ): # loop forever
+                result = win32event.WaitForSingleObject (change_handle, 500)
+                #
+                # If the WaitFor... returned because of a notification (as
+                #  opposed to timing out or some error) then look for the
+                #  changes in the directory contents.
+                #
+                if result == win32con.WAIT_OBJECT_0:
+                    self.upload()
+                    win32file.FindNextChangeNotification (change_handle)
+        finally:
+            win32file.FindCloseChangeNotification (change_handle)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Upload images to Flickr.')
@@ -480,11 +513,12 @@ if __name__ == "__main__":
         help='Space-separated tags for uploaded images')
     parser.add_argument('-r', '--drip-feed',   action='store_true',
         help='Wait a bit between uploading individual images')
+    parser.add_argument('-x', '--delete', action='store_true',
+        help='Delete local images after uploading')
     args = parser.parse_args()
 
     flick = Uploadr()
+    flick.upload()
 
     if args.daemon:
         flick.run()
-    else:
-        flick.upload()
