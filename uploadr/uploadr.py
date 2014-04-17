@@ -66,7 +66,7 @@ DRIP_TIME = settings["drip_time"]
 
 #   File we keep the history of uploaded images in.
 #
-HISTORY_FILE = os.path.join(IMAGE_DIR, "uploadr.history")
+HISTORY_FILE = os.path.join(SCRIPT_DIR, "uploadr.history")
 
 class APIConstants:
     """ APIConstants class
@@ -99,7 +99,7 @@ class Uploadr:
     token = None
     logger = None
     perms = ""
-    TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
+    TOKEN_FILE = os.path.join(SCRIPT_DIR, ".flickrToken")
 
     def __init__( self ):
         """ Constructor
