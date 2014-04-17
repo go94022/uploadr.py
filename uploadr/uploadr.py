@@ -48,6 +48,11 @@ import xmltramp
 import hashlib
 import logging
 
+import win32ui
+import win32con
+import win32file
+import win32event
+
 # location of script
 SCRIPT_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
 
@@ -185,13 +190,11 @@ class Uploadr:
         ans = ""
         try:
             webbrowser.open( url )
-            ans = raw_input("Have you authenticated this application? (Y/N): ")
+            ans = win32ui.MessageBox("Have you authenticated via the web page?", "Flickr Authorization", win32con.MB_YESNOCANCEL)
         except:
-            print(str(sys.exc_info()))
-        if ( ans.lower() == "n" ):
-            print("You need to allow this program to access your Flickr site.")
-            print("A web browser should pop open with instructions.")
-            print("After you have allowed access restart uploadr.py")
+            self.logger.error(str(sys.exc_info()))
+        if ( ans != win32con.IDYES ):
+            win32ui.MessageBox("You need to allow this program to access your Flickr site. A web browser should pop open with instructions. After you have allowed access restart uploadr", "Flickr Authorization")
             sys.exit()
 
     def getToken( self ):
@@ -294,6 +297,8 @@ class Uploadr:
         """ upload
         """
 
+        self.logger.info("Scanning for new images")
+
         newImages = self.grabNewImages()
         if ( not self.checkToken() ):
             self.authenticate()
@@ -365,14 +370,14 @@ class Uploadr:
                     self.logger.warning("Problem:")
                     self.reportError( res )
             except:
-                print(str(sys.exc_info()))
+                self.logger.error(str(sys.exc_info()))
         return success
 
     def removeImage( self, image ):
         """ delete a local image (presumably on successful upload)
         """
         if os.path.isfile(image):
-            print ("Deleting local copy of " + image)
+            self.logger.info("Deleting local copy of " + image)
             return os.remove(image)
         return False
 
@@ -480,10 +485,9 @@ class Uploadr:
         """ run
         """
 
+        self.logger.info("Daemon started, watching %s..." % IMAGE_DIR)
+
         # from http://timgolden.me.uk/python/win32_how_do_i/watch_directory_for_changes.html
-        import win32file
-        import win32con
-        import win32event
         #
         # FindFirstChangeNotification sets up a handle for watching
         #  file changes. The first parameter is the path to be
@@ -532,5 +536,4 @@ if __name__ == "__main__":
     flick.upload()
 
     if args.daemon:
-        print "Daemon started, watching %s..." % IMAGE_DIR
         flick.run()
