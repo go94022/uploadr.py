@@ -8,3 +8,5 @@
 *.log
 uploadr/dist
 uploadr/build
+uploadr/uploadr.history
+uploadr/.flickrToken
