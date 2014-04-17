@@ -38,6 +38,7 @@ import mimetools
 import mimetypes
 import os
 import shelve
+import dbhash
 import string
 import sys
 import time
@@ -48,7 +49,7 @@ import hashlib
 import logging
 
 # location of script
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
 
 # read settings yaml
 import yaml
@@ -531,4 +532,5 @@ if __name__ == "__main__":
     flick.upload()
 
     if args.daemon:
+        print "Daemon started, watching %s..." % IMAGE_DIR
         flick.run()
