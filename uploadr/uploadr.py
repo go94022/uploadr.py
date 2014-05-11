@@ -101,7 +101,8 @@ class APIConstants:
     """ APIConstants class
     """
 
-    base = "http://api.flickr.com/services/" #"http://flickr.com/services/"
+    base = "https://api.flickr.com/services/" #"http://flickr.com/services/"
+    base_upload = "https://up.flickr.com/services/"  # refer to https://code.flickr.net/2014/04/30/flickr-api-going-ssl-only-on-june-27th-2014/
     rest   = base + "rest/"
     auth   = base + "auth/"
     upload = base + "upload/"
@@ -330,7 +331,9 @@ class Uploadr:
             self.authenticate()
         self.uploaded = shelve.open( HISTORY_FILE )
 
-        setId = self.findPhotoset(options.sets)
+        if (options.sets!=""):
+            setId = self.findPhotoset(options.sets)
+
         for i, image in enumerate( newImages ):
             picid = self.uploadImage( image )
 
