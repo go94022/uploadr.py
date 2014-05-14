@@ -105,7 +105,7 @@ class APIConstants:
     base_upload = "https://up.flickr.com/services/"  # refer to https://code.flickr.net/2014/04/30/flickr-api-going-ssl-only-on-june-27th-2014/
     rest   = base + "rest/"
     auth   = base + "auth/"
-    upload = base + "upload/"
+    upload = base_upload + "upload/"
 
     token = "auth_token"
     secret = "secret"
@@ -448,6 +448,8 @@ class Uploadr:
 
             except:
                 print(str(sys.exc_info()))
+        else:
+            print("Duplicate, skip upload " + image )
         return success #photoid if successful
 
     def createSet( self, photoid ):
@@ -593,7 +595,7 @@ class Uploadr:
         else:
             resized=""
         toc = timeit.default_timer()
-        print ("resize time %s " % (toc-tic))
+        # print ("resize time %s " % (toc-tic))
         return resized
 
     def copy_exif (self, sourcefile, targetfile):
