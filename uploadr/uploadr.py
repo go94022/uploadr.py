@@ -58,7 +58,7 @@ import xmltramp
 #
 #
 #
-UPLOADR_DIR = "/media/C/Ankit/Projects/Python-Projects/Phototime/uploadr/uploadr/"
+UPLOADR_DIR = os.path.dirname(__file__)
 #
 #   Flickr settings
 #
@@ -125,7 +125,7 @@ class Uploadr:
     IMAGE_DIR = ""
     TOKEN_DIR = os.getcwd()
     perms = ""
-    TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
+    TOKEN_FILE = os.path.join(UPLOADR_DIR, ".flickrToken")
     log = open(LOG_FILE,"ab")
 
     def __init__( self ):
