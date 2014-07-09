@@ -100,10 +100,11 @@ class APIConstants:
     """ APIConstants class
     """
 
-    base = "http://flickr.com/services/"
+    upload_base = "https://up.flickr.com/services/"
+    base = "https://api.flickr.com/services/"
     rest   = base + "rest/"
     auth   = base + "auth/"
-    upload = base + "upload/"
+    upload = upload_base + "upload/"
 
     token = "auth_token"
     secret = "secret"
@@ -468,6 +469,9 @@ class Uploadr:
                     if(args.log) : 
                         self.log.write("error,"+str(image)+"\n")
                         self.log.flush()
+            except urllib2.HTTPError as e:
+                print e.code
+                print e.read()
             except:
                 print(str(sys.exc_info()))
                 if(args.log) : 
