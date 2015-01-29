@@ -45,6 +45,7 @@ import urllib2
 import webbrowser
 import xmltramp
 import urllib
+import ConfigParser
 
 #
 ##
@@ -61,7 +62,7 @@ IMAGE_DIR = "images/"
 FLICKR = {"title": "",
         "description": "",
         "tags": "auto-upload",
-        "is_public": "1",
+        "is_public": "0",
         "is_friend": "0",
         "is_family": "0" }
 #
@@ -78,9 +79,15 @@ DRIP_TIME = 1 * 60
 #
 HISTORY_FILE = os.path.join(IMAGE_DIR, "uploadr.history")
 
+LOG_FILE = os.path.join(IMAGE_DIR, "uploaded.log")
+
 ##
 ##  You shouldn't need to modify anything below here
 ##
+config = ConfigParser.RawConfigParser()
+config.read('settings.cfg')
+FLICKR["api_key"] = config.get('flickr', 'api_key')
+FLICKR["secret"] = config.get('flickr', 'secret')
 FLICKR["api_key"] = os.environ['FLICKR_UPLOADR_PY_API_KEY']
 FLICKR["secret"] = os.environ['FLICKR_UPLOADR_PY_SECRET']
 
@@ -88,10 +95,10 @@ class APIConstants:
     """ APIConstants class
     """
 
-    base = "http://api.flickr.com/services/"#to get rid of POST 166 error (flickr)
+    base = "https://api.flickr.com/services/"
     rest   = base + "rest/"
     auth   = base + "auth/"
-    upload = base + "upload/"
+    upload = upload_base + "upload/"
 
     token = "auth_token"
     secret = "secret"
@@ -113,14 +120,17 @@ class Uploadr:
     """
 
     token = None
+    IMAGE_DIR = ""
+    TOKEN_DIR = os.getcwd()
     perms = ""
-    TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
+    TOKEN_FILE = os.path.join(UPLOADR_DIR, ".flickrToken")
+    log = open(LOG_FILE,"ab")
 
     def __init__( self ):
         """ Constructor
         """
         self.token = self.getCachedToken()
-
+        self.IMAGE_DIR = args.path.rstrip('/')
         if args.search_dups:
             self.isDuplicate = self.isFlickrDuplicate
         else:
@@ -305,6 +315,67 @@ class Uploadr:
                 print(str(sys.exc_info()))
             return False
 
+    def createPhotoset(self,photoids):
+        """
+        flickr.photosets.create
+
+        Create a new photoset for the calling user.Authentication
+
+        Arguments
+
+        api_key (Required)
+        Your API application key.
+
+        title (Required)
+        A title for the photoset.
+
+        description (Optional)
+        A description of the photoset. May contain limited html.
+
+        primary_photo_id (Required)
+        The id of the photo to represent this set. The photo must belong to the calling user.This method requires authentication with 'write' permission.
+        """ 
+        photosetID = ""
+        d = {
+                    api.method  : "flickr.photosets.create",
+                    "title"         :  str(FLICKR["photoset_title"]),
+                    "primary_photo_id" : str(photoids[0]),
+                    api.token       : str(self.token)
+                }
+        sig = self.signCall( d )
+        #d['title'] = urllib2.quote(str(FLICKR["photoset_title"]).replace(" ","+"),safe="+") # Need to do this, otherwise signature errors occur
+        d['title'] = str(FLICKR["photoset_title"]).replace(" ","+") # Need to do this, otherwise signature errors occur
+        url = self.urlGen( api.rest, d, sig )
+        try:
+            res = self.getResponse( url )
+            if(self.isGood(res)) :
+                photosetID = str(res.photoset('id'))
+                if(not args.silent) : print "Created Photoset"+" "+photosetID
+                if(args.log) : self.log.write(photosetID+","+str(FLICKR["photoset_title"])+"\n")
+            else :
+                print "Could not create photoset, "+ str(res.err('msg'))
+                self.reportError( res )
+        except:
+            print("Error creating photoset:" + str( sys.exc_info() ))
+        if(photosetID != "" and len(photoids)>1):
+            for ids in photoids[1:] :
+                d = {
+                        api.method  : "flickr.photosets.addPhoto",
+                        "photo_id"         : ids,
+                        "photoset_id" : photosetID,
+                        api.token       : str(self.token)
+                    }
+                sig = self.signCall( d )
+                url = self.urlGen( api.rest, d, sig )
+                try:
+                    res = self.getResponse( url )
+                    if(not self.isGood(res)) :
+                        self.reportError( res )
+                except:
+                    print("Error creating photoset:" + str( sys.exc_info() ))
+
+
+
 
     def upload( self ):
         """ upload
@@ -314,27 +385,41 @@ class Uploadr:
         if ( not self.checkToken() ):
             self.authenticate()
         self.uploaded = shelve.open( HISTORY_FILE )
-        for i, image in enumerate( newImages ):
-            success = self.uploadImage( image )
-            if args.drip_feed and success and i != len( newImages )-1:
-                print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
-                time.sleep( DRIP_TIME )
+        for i, image_directory in enumerate( newImages ):
+            photoids=[]
+            FLICKR["photoset_title"] = image_directory[0]
+            for image,title in image_directory[1]:
+                tag=" "+image_directory[0]+" "+title
+                success,photoid = self.uploadImageWithMetadata( image,title,tag )
+                if(success) :
+                    photoids.append(str(photoid))
+                if args.drip_feed and success:# and i != len( newImages )-1:
+                    if(not args.silent) : print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
+                    time.sleep( DRIP_TIME )
+            if(len(photoids)>0) : self.createPhotoset(photoids)
         self.uploaded.close()
+        self.log.close()
 
     def grabNewImages( self ):
         """ grabNewImages
         """
 
-        images = []
-        foo = os.walk( IMAGE_DIR )
+        list_of_images=[]
+        foo = os.walk( self.IMAGE_DIR )
         for data in foo:
+            images = []
             (dirpath, dirnames, filenames) = data
-            for f in filenames :
-                ext = f.lower().split(".")[-1]
-                if ( ext == "jpg" or ext == "gif" or ext == "png" ):
-                    images.append( os.path.normpath( dirpath + "/" + f ) )
-        images.sort()
-        return images
+            if(len(filenames)>0):
+                for f in filenames :
+                    ext = f.lower().split(".")[-1]
+                    fname = f.rsplit(".",1)[0]
+                    if ( ext == "jpg" or ext == "jpeg" or ext == "gif" or ext == "png" ):
+                        images.append( (os.path.normpath( dirpath + "/" + f ),fname) )
+                if(len(images)>0):
+                    list_of_images.append((dirpath.rsplit('/',2)[-1],images))
+                if(args.norecursion):
+                    break
+        return list_of_images
 
 
     def uploadImage( self, image ):
@@ -342,8 +427,10 @@ class Uploadr:
         """
 
         success = False
+        photoid=""
         if not self.isDuplicate(image):
-            print("Uploading " + image + "...")
+        if ( not self.uploaded.has_key( image ) ):
+            if(not args.silent) : print("Uploading " + image + "...")
             try:
                 photo = ('photo', image, open(image,'rb').read())
                 if args.title: # Replace
@@ -369,17 +456,41 @@ class Uploadr:
                 xml = urllib2.urlopen( url ).read()
                 res = xmltramp.parse(xml)
                 if ( self.isGood( res ) ):
-                    print("Success.")
+                    if(not args.silent) : print("Success.")
+                    photoid=res.photoid
                     self.logUpload( res.photoid, image )
+                    if(args.log) :
+                        self.log.write(str(photoid)+","+str(image)+"\n")
+                        self.log.flush()
                     success = True
                 else :
                     print("Problem:")
                     self.reportError( res )
+                    if(args.log) : 
+                        self.log.write("error,"+str(image)+"\n")
+                        self.log.flush()
             except KeyboardInterrupt:
                 sys.exit(1)
+            except urllib2.HTTPError as e:
+                print e.code
+                print e.read()
             except:
                 print(str(sys.exc_info()))
-        return success
+                if(args.log) : 
+                        self.log.write("error,"+str(image)+","+str(sys.exc_info())+"\n")
+                        self.log.flush()
+        return success,photoid
+
+    def uploadImageWithMetadata(self,image,title,tag):
+        """
+        Call uploadImage(self,image) and set the title and tag for batch uploads 
+        """
+
+        FLICKR["title"] = title
+        FLICKR["tags"] = tag
+        success,photoid= self.uploadImage(image)
+        return success,photoid
+
 
     def logUpload( self, photoID, imageName ):
         """ logUpload
@@ -523,7 +634,30 @@ if __name__ == "__main__":
         help='Wait a bit between uploading individual images')
     parser.add_argument('-s', '--search-dups',   action='store_true',
                         help='Check Flickr for duplicate title before uploading')
+    parser.add_argument('-s', '--silent', action='store_true',
+        help='Suppress all output except errors')
+    parser.add_argument('-l','--log',action='store_true',
+        help='Enable logging to text file')
+    parser.add_argument('-1','--norecursion',action='store_true',
+        help="Upload only files in current directory, don't go deeper")
+    parser.add_argument('--public',action='store_true',
+        help="Make this batch of uploads visible to everyone")
+    parser.add_argument('--friend',action='store_true',
+        help="Make this batch of uploads visible to friends")
+    parser.add_argument('--family',action='store_true',
+        help="Make this batch of uploads visible to family")
+    parser.add_argument('path',help="Path to the file")
     args = parser.parse_args()
+
+    if args.public:
+        FLICKR["is_public"] = "1"
+        FLICKR["is_family"] = "1"
+        FLICKR["is_friend"] = "1"
+    if args.friend:
+        FLICKR["is_friend"] = "1"
+    if args.family:
+        FLICKR["is_family"] = "1"
+
 
     flick = Uploadr()
 
