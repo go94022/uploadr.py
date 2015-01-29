@@ -1,0 +1,3 @@
+[submodule "uploadr/pexif"]
+	path = uploadr/pexif
+	url = git://github.com/bennoleslie/pexif

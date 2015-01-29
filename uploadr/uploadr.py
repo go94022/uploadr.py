@@ -29,7 +29,12 @@
 
    You may use this code however you see fit in any form whatsoever.
 
+   *** August 2013, by alisanta
+    took code from Barry Dobyns (https://github.com/bdobyns/uploadr.py) to make more arguments available in command line
+    add argument to allow upload of resized images 
 
+    include a repo from Ben Leslei (https://github.com/bennoleslie/pexif) to copy EXIF information to resized image
+   *** 
 """
 
 import argparse
@@ -42,10 +47,17 @@ import string
 import sys
 import time
 import urllib2
+import urllib
 import webbrowser
 import xmltramp
-import urllib
 import ConfigParser
+from optparse import OptionParser
+import Image
+import tempfile
+from pexif import pexif
+import timeit  # want to calculate resize processing time
+
+
 
 #
 ##
@@ -53,7 +65,7 @@ import ConfigParser
 ##
 
 #
-# Location to scan for new images
+# Location to scan for new images, this can be override from parameter
 #
 IMAGE_DIR = "images/"
 #
@@ -96,9 +108,10 @@ class APIConstants:
     """
 
     base = "https://api.flickr.com/services/"
+    base_upload = "https://up.flickr.com/services/"  # refer to https://code.flickr.net/2014/04/30/flickr-api-going-ssl-only-on-june-27th-2014/
     rest   = base + "rest/"
     auth   = base + "auth/"
-    upload = upload_base + "upload/"
+    upload = base + "upload/"
 
     token = "auth_token"
     secret = "secret"
@@ -123,7 +136,7 @@ class Uploadr:
     IMAGE_DIR = ""
     TOKEN_DIR = os.getcwd()
     perms = ""
-    TOKEN_FILE = os.path.join(UPLOADR_DIR, ".flickrToken")
+    TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
     log = open(LOG_FILE,"ab")
 
     def __init__( self ):
@@ -156,7 +169,7 @@ class Uploadr:
         """
         foo = base + "?"
         for d in data:
-            foo += d + "=" + data[d] + "&"
+            foo += d + "=" + urllib.quote_plus( data[d] ) + "&"
         return foo + api.key + "=" + FLICKR[ api.key ] + "&" + api.sig + "=" + sig
 
 
@@ -381,22 +394,40 @@ class Uploadr:
         """ upload
         """
 
+        if options.listset:
+            self.listPhotoset()
+            return
+
+        
         newImages = self.grabNewImages()
         if ( not self.checkToken() ):
             self.authenticate()
         self.uploaded = shelve.open( HISTORY_FILE )
-        for i, image_directory in enumerate( newImages ):
-            photoids=[]
-            FLICKR["photoset_title"] = image_directory[0]
-            for image,title in image_directory[1]:
-                tag=" "+image_directory[0]+" "+title
-                success,photoid = self.uploadImageWithMetadata( image,title,tag )
-                if(success) :
-                    photoids.append(str(photoid))
-                if args.drip_feed and success:# and i != len( newImages )-1:
-                    if(not args.silent) : print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
-                    time.sleep( DRIP_TIME )
-            if(len(photoids)>0) : self.createPhotoset(photoids)
+
+        if (options.sets!=""):
+            setId = self.findPhotoset(options.sets)
+
+        for i, image in enumerate( newImages ):
+            picid = self.uploadImage( image )
+
+            # add photo to set
+            
+            if (options.sets!=""):
+                if setId=="": 
+                    setId = self.createSet( picid )
+                else:
+                    self.addPhotoToSet( setId, picid )
+            #
+            #if (options.sets!=""):
+            #    if (setId==""):
+            #        # set not found, create new set
+            #        self.addPhotoToSet( setId, picid )
+            #    self.addPhotoToSet( setId, picid )    
+            #"""
+
+            if options.drip_feed and success and i != len( newImages )-1:
+                print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
+                time.sleep( DRIP_TIME )
         self.uploaded.close()
         self.log.close()
 
@@ -432,13 +463,22 @@ class Uploadr:
         if ( not self.uploaded.has_key( image ) ):
             if(not args.silent) : print("Uploading " + image + "...")
             try:
-                photo = ('photo', image, open(image,'rb').read())
-                if args.title: # Replace
-                    FLICKR["title"] = args.title
-                if args.description: # Replace
-                    FLICKR["description"] = args.description
-                if args.tags: # Append
-                    FLICKR["tags"] += " " + args.tags + " "
+                if hasattr(options, 'image_pixel_size'):
+                    resized_image = self.resize_image(image)
+
+                if resized_image=="":
+                    photo = ('photo', image, open(image,'rb').read())
+                else:
+                    photo = ('photo', image, open(resized_image,'rb').read())
+                    
+                
+                
+                #if args.title: # Replace
+                #    FLICKR["title"] = args.title
+                #if args.description: # Replace
+                #    FLICKR["description"] = args.description
+                #if args.tags: # Append
+                #    FLICKR["tags"] += " " + args.tags + " "
                 d = {
                     api.token       : str(self.token),
                     api.perms       : str(self.perms),
@@ -462,13 +502,38 @@ class Uploadr:
                     if(args.log) :
                         self.log.write(str(photoid)+","+str(image)+"\n")
                         self.log.flush()
-                    success = True
+                    success = res.photoid
+                    if len(FLICKR["lat"]) and len(FLICKR["lon"]):
+                        d = { 
+                            api.token : str(self.token),
+                            "method" : str("flickr.photos.geo.setLocation"),
+                            "photo_id" : str(res.photoid),
+                            'lat': str(FLICKR['lat']),
+                            'lon': str(FLICKR['lon'])
+                            }
+                        sig = self.signCall( d )
+                        d[ api.sig ] = sig
+                        d[ api.key ] = FLICKR[ api.key ]         
+                        url = self.build_request(api.rest, d, () )
+                        xml = urllib2.urlopen( url ).read()
+                        res = xmltramp.parse(xml)
+                        if ( self.isGood( res ) ):
+                            print "Patched Location", d['lat'], d['lon']
+                        else:
+                            print "FAILED Location", d['lat'], d['lon']
+                            self.reportError( res )
+
+
                 else :
                     print("Problem:")
                     self.reportError( res )
                     if(args.log) : 
                         self.log.write("error,"+str(image)+"\n")
                         self.log.flush()
+                # remove temp resized image
+                if resized_image!="":
+                    self.kill_resize_image(resized_image)
+
             except KeyboardInterrupt:
                 sys.exit(1)
             except urllib2.HTTPError as e:
@@ -479,7 +544,9 @@ class Uploadr:
                 if(args.log) : 
                         self.log.write("error,"+str(image)+","+str(sys.exc_info())+"\n")
                         self.log.flush()
-        return success,photoid
+        else:
+            print("Duplicate, skip upload " + image )
+        return success #photoid if successful
 
     def uploadImageWithMetadata(self,image,title,tag):
         """
@@ -490,6 +557,199 @@ class Uploadr:
         FLICKR["tags"] = tag
         success,photoid= self.uploadImage(image)
         return success,photoid
+
+    def createSet( self, photoid ):
+            sys.stdout.write( "Creating set "+ SET_TITLE + "... using photoid "+ str(photoid))
+            d = { 
+                api.method : "flickr.photosets.create",
+                api.token   : str(self.token),
+                api.perms : "write",
+                "title"      : SET_TITLE,
+                "primary_photo_id" : str(photoid)
+            }
+            sig = self.signCall( d )
+            d[ api.sig ] = sig
+            d[ api.key ] = FLICKR[ api.key ]        
+            url = self.urlGen( api.rest, d, sig )
+            try:
+                res = self.getResponse( url )
+                
+                if ( self.isGood( res ) ):
+                    print "successful."
+                    return res.photoset("id")
+                else :
+                    self.reportError( res )
+            except:
+                print str( sys.exc_info() )
+
+    def findPhotoset ( self, setname):
+        """ retrieve all photosets from flickr, and find setID 
+        """
+        d = { 
+            api.method : "flickr.photosets.getList",
+            api.token   : str(self.token)
+        }
+        sig = self.signCall( d )
+        d[ api.sig ] = sig
+        d[ api.key ] = FLICKR[ api.key ]        
+        url = self.urlGen( api.rest, d, sig )
+        result = ""
+        try:
+            res = self.getResponse( url )
+            allsets=[]
+            for the_set in res[0]:
+                dic=(str(the_set('id')), str(the_set.title), str(the_set('date_create')))
+                allsets.append(dic)
+
+            for x in allsets:
+                if (x[1]==setname):
+                    result = x[0]
+
+        except:
+            print str( sys.exc_info() )
+
+        return result
+
+    def listPhotoset ( self):
+        """ retrieve all photosets from flickr, print as output
+        """
+        d = { 
+            api.method : "flickr.photosets.getList",
+            api.token   : str(self.token)
+        }
+        sig = self.signCall( d )
+        d[ api.sig ] = sig
+        d[ api.key ] = FLICKR[ api.key ]        
+        url = self.urlGen( api.rest, d, sig )
+        
+        try:
+            res = self.getResponse( url )
+            allsets=[]
+            for the_set in res[0]:
+                dic=( str(the_set.title),str(the_set('id')), str(the_set('date_create')))
+                allsets.append(dic)
+                
+            a = sorted(allsets, key=lambda a_entry: a_entry[0]) 
+            for x in a:
+                print (x[0] +" - "+ x[1])
+
+        except:
+            print str( sys.exc_info() )
+
+       
+
+    def addPhotoToSet( self, setid, photoid ):
+        # from https://github.com/stinju/uploadr.py/
+        
+        d = { 
+            api.method : "flickr.photosets.addPhoto",
+            api.token   : str(self.token),
+            "photoset_id"      : str(setid),
+            "photo_id" : str(photoid)
+        }
+        sig = self.signCall( d )
+        d[ api.sig ] = sig
+        d[ api.key ] = FLICKR[ api.key ]        
+        url = self.urlGen( api.rest, d, sig )
+        try:
+            res = self.getResponse( url )
+
+            
+            if ( self.isGood( res ) ):
+                #print "successful add to set."
+                pass
+            elif str(res.err('code'))=="1":
+                return False # error 1: Photoset not found
+            else :
+                self.reportError( res )
+                return False
+        except:
+            print str( sys.exc_info() )
+            return False
+        return True
+
+    def resize_image ( self, image):
+        """ resizeimage accoding to specified size in arguments
+            return empty if resize is cancelled
+        """
+        tic = timeit.default_timer()
+        img = Image.open(image)
+        cancel=0
+        if img.size[0]>img.size[1]:
+            if float(img.size[0])<=float(options.image_pixel_size):
+                cancel=1
+            else:
+                ratio=float(img.size[0])/float(img.size[1])
+                vsize=int(float(options.image_pixel_size))
+                hsize=int(float(options.image_pixel_size)/float(ratio))
+        else:
+            if float(img.size[1])<=float(options.image_pixel_size):
+                cancel=1
+            else:
+                ratio=float(img.size[1])/float(img.size[0])
+                hsize=int(float(options.image_pixel_size))
+                vsize=int(float(options.image_pixel_size)/float(ratio))
+        
+        if cancel==0:
+            img2 = img.resize((vsize,hsize), Image.ANTIALIAS)
+            resized = os.path.normpath(  tempfile.gettempdir() +"/tmpres"+(os.path.split(image))[1] ) 
+            img2.save(resized, quality=95)
+            
+            # now copy EXIF information
+            self.copy_exif(image, resized)
+
+        else:
+            resized=""
+        toc = timeit.default_timer()
+        # print ("resize time %s " % (toc-tic))
+        return resized
+
+    def copy_exif (self, sourcefile, targetfile):
+        """ copy important EXIF to resized file. 
+            Refer to pexif code for acceptable tags.
+            For my own purpose, I just need some tags copied: Camera, Model, Original Date, and GPS if available
+        """
+        a=["Make", "Model", "Software","DateTime", "FileModifyDate", "Orientation"]
+        b=["DateTimeOriginal"]
+        img = pexif.JpegFile.fromFile(sourcefile)
+        p=img.exif.primary
+        q=p.ExtendedEXIF
+        img_dst = pexif.JpegFile.fromFile(targetfile)
+        primary_dst = img_dst.exif.primary
+        
+        # copy primary tags
+        for x in a:
+            if hasattr(p, x):
+                primary_dst[x]=p[x]
+        
+        # extended EXIF tags
+        for x in b:
+            if hasattr(q, x):
+                primary_dst.ExtendedEXIF[x] = q[x]
+        
+        # GPS Info
+        try:
+            gps_loc = img.get_geo()
+            img_dst.set_geo(gps_loc[0], gps_loc[1])
+        except img.NoSection:
+            pass
+        except:
+            pass
+        try:
+            img_dst.writeFile(targetfile)
+        except:
+            print ("Unable to write file "+targetfile)
+        
+
+    def kill_resize_image(self, resized_image):
+        """ remove temporary resized image after upload
+        """
+        if (os.path.exists(resized_image)):
+            try:
+                os.remove(resized_image)
+            except:
+                print("Error removing temp "+resized_image)
+
 
 
     def logUpload( self, photoID, imageName ):
@@ -632,34 +892,57 @@ if __name__ == "__main__":
         help='Space-separated tags for uploaded images')
     parser.add_argument('-r', '--drip-feed',   action='store_true',
         help='Wait a bit between uploading individual images')
-    parser.add_argument('-s', '--search-dups',   action='store_true',
-                        help='Check Flickr for duplicate title before uploading')
-    parser.add_argument('-s', '--silent', action='store_true',
-        help='Suppress all output except errors')
-    parser.add_argument('-l','--log',action='store_true',
-        help='Enable logging to text file')
-    parser.add_argument('-1','--norecursion',action='store_true',
-        help="Upload only files in current directory, don't go deeper")
-    parser.add_argument('--public',action='store_true',
-        help="Make this batch of uploads visible to everyone")
-    parser.add_argument('--friend',action='store_true',
-        help="Make this batch of uploads visible to friends")
-    parser.add_argument('--family',action='store_true',
-        help="Make this batch of uploads visible to family")
-    parser.add_argument('path',help="Path to the file")
-    args = parser.parse_args()
+    #args = parser.parse_args()
+    usage= "usage: %prog [options] dir_to_upload"
+    version="%prog 0.2"
+    parser = OptionParser(usage=usage, version=version)
+    parser.add_option("-d", "--daemon", action="store_true",  dest="daemon", default=False, help="Run forever as a daemon")
+    parser.add_option("-e", "--desc",   action="store", dest="desc",   default="", help="Description of files to upload")
+    parser.add_option("-t", "--tags",   action="store", dest="tags",   default="", help="Tags to flag uploaded photos with")
+    parser.add_option("-i", "--title",  action="store", dest="title",   default="",    help="Title to give uploaded photos")
+    parser.add_option("-u", "--public", action="store_const", const=1, dest="public", default=1,     help="Mark the upload public")
+    parser.add_option("-n", "--notpublic", action="store_const", const=0, dest="public", default=0,               help="Mark the upload hidden (not public)")
+    parser.add_option("-f", "--friend", action="store_const", const=1, dest="friends", default=0,    help="Mark the upload for friends only")
+    parser.add_option("-a", "--family", action="store_const", const=1, dest="family", default=0,     help="Mark the upload for Family only")
+    parser.add_option("-x", "--lon", action="store", dest="lat", default="", help="latitude geo-location")
+    parser.add_option("-y", "--lat", action="store", dest="lon", default="", help="longitude geo-location")
+    parser.add_option("-r", "--drip-feed", action='store_true', default="", help='Wait a bit between uploading individual images')
+    parser.add_option("-p", "--pixel", action="store", type="string", dest="image_pixel_size", help="Uploaded image pixel size (800,1280,1600,2048)")
+    parser.add_option("-s", "--sets", action="store", type="string", dest="sets", default="", help="Create set and ddd photo to specified set title")
+    parser.add_option("-l", "--listset", action="store_true", default="", help="Print List of Photoset, ** No Upload process **")
+    
+    #parser.add_option("-o", "--setdirname", action='store_true', default="", help='Use directory name as Set name')
 
-    if args.public:
-        FLICKR["is_public"] = "1"
-        FLICKR["is_family"] = "1"
-        FLICKR["is_friend"] = "1"
-    if args.friend:
-        FLICKR["is_friend"] = "1"
-    if args.family:
-        FLICKR["is_family"] = "1"
+    (options,args) = parser.parse_args()
+
+    if hasattr(options, 'title'):
+        FLICKR["title"] = options.title
+    if hasattr(options, "desc"):
+        FLICKR["desc"] = options.desc
+    if hasattr(options, 'tags'):
+        FLICKR["tags"] = options.tags
+    if hasattr(options, 'lat'):
+        FLICKR["lat"] = options.lat
+    if hasattr(options, 'lon'):
+        FLICKR["lon"] = options.lon
+    if hasattr(options, 'notpublic'):
+        FLICKR["is_public"] = options.public
+    if hasattr(options, 'friend'):
+        FLICKR["is_friend"] = options.friends    
+    if hasattr(options, 'family'):
+        print (options.family)
+        FLICKR["is_family"] = options.family
+    if hasattr(options, 'sets'):
+        if options.sets!="":
+            SET_TITLE = options.sets
+       
 
 
     flick = Uploadr()
+
+    if len(args):
+        IMAGE_DIR = args[0];
+    print "Image folder set to "+IMAGE_DIR   
 
     if args.daemon:
         flick.run()
