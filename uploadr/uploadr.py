@@ -59,10 +59,21 @@ import timeit  # want to calculate resize processing time
 
 
 
-#
-##
-##  Items you will want to change
-##
+import win32ui
+import win32con
+import win32file
+import win32event
+
+# location of script
+SCRIPT_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
+
+# read settings yaml
+import yaml
+with open(os.path.join(SCRIPT_DIR, "settings.yml")) as f:
+    settings = yaml.safe_load(f)
+IMAGE_DIR = settings["image_dir"]
+FLICKR = settings["flickr"]
+DRIP_TIME = settings["drip_time"]
 
 #
 # Location to scan for new images, this can be override from parameter
@@ -136,7 +147,7 @@ class Uploadr:
     IMAGE_DIR = ""
     TOKEN_DIR = os.getcwd()
     perms = ""
-    TOKEN_FILE = os.path.join(IMAGE_DIR, ".flickrToken")
+    TOKEN_FILE = os.path.join(SCRIPT_DIR, ".flickrToken")
     log = open(LOG_FILE,"ab")
 
     def __init__( self ):
@@ -752,15 +763,43 @@ class Uploadr:
 
 
 
+    def removeImage( self, image ):
+        """ delete a local image (presumably on successful upload)
+        """
+        if os.path.isfile(image):
+            self.logger.info("Deleting local copy of " + image)
+            return os.remove(image)
+        return False
+
+    def hashImage ( self, image ):
+        """ given a filename, hash the file contents
+        """
+        # from http://www.pythoncentral.io/hashing-files-with-python/
+        BLOCKSIZE = 65536
+        hasher = hashlib.md5()
+        with open( image, 'rb' ) as fin:
+            buf = fin.read(BLOCKSIZE)
+            while len(buf) > 0:
+                hasher.update(buf)
+                buf = fin.read(BLOCKSIZE)
+        return(hasher.hexdigest())
+
+
+    def logUpload( self, photoID, fileHash ):
+        """ log the upload
     def logUpload( self, photoID, imageName ):
         """ logUpload
         """
 
         photoID = str( photoID )
+        fileHash = str( fileHash )
+
+        self.uploaded[ fileHash ] = photoID
         imageName = str( imageName )
         self.uploaded[ imageName ] = photoID
         self.uploaded[ photoID ] = imageName
         self.uploaded.sync()
+        self.uploaded[ photoID ] =  fileHash
 
     def build_request(self, theurl, fields, files, txheaders=None):
         """
@@ -894,6 +933,8 @@ if __name__ == "__main__":
         help='Wait a bit between uploading individual images')
     #args = parser.parse_args()
     usage= "usage: %prog [options] dir_to_upload"
+    parser.add_argument('-x', '--delete', action='store_true',
+        help='Delete local images after uploading')
     version="%prog 0.2"
     parser = OptionParser(usage=usage, version=version)
     parser.add_option("-d", "--daemon", action="store_true",  dest="daemon", default=False, help="Run forever as a daemon")

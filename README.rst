@@ -1,11 +1,14 @@
-Flickr-Uploader.py
-==================
+Uploadr.py
+==========
 
-Flickr-Uploader is a simple Python script for uploading your photos to Flickr. Unlike
+Uploadr.py is a simple Python script for uploading your photos to Flickr. Unlike
 many GUI applications out there, it lends itself to automation; and because it's
 free and open source, you can just change it if you don't like it.
 
 I have tweaked quite a few features from the original source, so some features might not work similar to the ones in the original source. The source is fairly clear, but if you would like to pay to get documentation and tips on how best to use this script, or just buy me a coffee to appreciate a work, you can do so here : http://go.ankitdaf.com/uploadr
+Now support local file deletion on successful upload, logging by file hash, some 
+other minor changes.
+
 
 Authentication
 --------------
@@ -47,4 +50,4 @@ License
 -------
 
 Uploadr.py consists of code by Cameron Mallory, Martin Kleppmann, Aaron Swartz, Alisanta Tjia and
-others. See ``COPYRIGHT`` for details.
+Andy Hebrank and others. See ``COPYRIGHT`` for details.
